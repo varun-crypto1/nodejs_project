@@ -7,6 +7,9 @@ const { JWT_SECRET } = process.env;
 
 const logger = require('../controllers/logger');
 
+const randomstring = require('randomstring');
+const sendMail = require('../helpers/sendMail');
+
 const register = (req, res) => {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -32,14 +35,32 @@ const register = (req, res) => {
         }
 
         const query = `INSERT INTO users (name, email, password) VALUES ('${req.body.name}', '${req.body.email}', '${hashedPassword}')`;
+        
 
         db.query(query, (err, result) => {
             if (err) {
                 console.error("Database error:", err);  // Log the error for debugging
                 return res.status(500).json({ error: 'Database error', details: err.message });
             }
+            
+            let mailSubject = 'Mail Verification';
+            const randomToken = randomstring.generate();
+            const content = `
+            <p>Hello ${req.body.name},</p>
+            <p>Please <a href="http://localhost:3000/mail-verification?token=${randomToken}">verify</a> your email.</p>
+            `;
 
-            return res.status(201).json({ message: 'User registered successfully' });
+               
+            sendMail(req.body.email, mailSubject, content);
+            db.query('UPDATE users set token=? where email=?', [randomToken, req.body.email], function(error, result){
+                if (error) {
+                      
+                    return res.status(400).send({ msg:error });
+                }
+
+            });
+            return res.status(200).json({ message: 'User registered successfully' });
+            
         });
     });
 };
@@ -104,7 +125,33 @@ const login = (req, res) => {
 
 };
 
+const verifyMail = (req, res) => {
+
+    var token = req.query.token;
+    db.query('SELECT * FROM users where token=? limit 1', token, function(error,result, fields){
+
+       if(error)
+        {
+            console.log(error.message);
+        } 
+        if(result.length > 0)
+        {
+            db.query(
+                `UPDATE users SET is_verified = 1, token = 'null' WHERE id = ${result[0]['id']}`
+                );
+
+               return res.render('mail-verification', { message: 'Mail verified successfully!' });
+        }
+        else
+        {
+            return res.render('404');
+        }
+
+    })
+
+}
 module.exports = {
     register,
-    login
+    login,
+    verifyMail
 };
